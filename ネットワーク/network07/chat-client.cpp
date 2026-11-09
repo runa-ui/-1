@@ -18,7 +18,7 @@
 
 constexpr int PORT = 8081;
 constexpr std::size_t MAX_LINE_BYTES = 256;
-constexpr std::size_t MAX_INPUT_BYTES = 1024;
+constexpr std::size_t MAX_INPUT_BYTES = MAX_LINE_BYTES;
 
 void fail(const char* what) {
     std::perror(what);
@@ -145,7 +145,11 @@ int main() {
             std::lock_guard<std::mutex> guard(screenMutex);
             std::cout << "> " << std::flush;
         }
-        if (!std::getline(std::cin, input)) break;
+        if (!std::getline(std::cin, input)) {
+            // Treat end-of-input like a normal QUIT so the server can reply BYE.
+            if (!disconnected) sendLine(sock, "QUIT");
+            break;
+        }
         if (disconnected) break;
         if (input.empty()) continue;
         if (input.size() > MAX_INPUT_BYTES) {
@@ -154,6 +158,12 @@ int main() {
             continue;
         }
         std::string request = toRequest(input);
+        // The protocol limit applies to the complete command, not only the typed text.
+        if (request.size() > MAX_LINE_BYTES) {
+            std::lock_guard<std::mutex> guard(screenMutex);
+            std::cout << "Request too long (max 256 bytes).\\n";
+            continue;
+        }
         if (!sendLine(sock, request)) {
             std::lock_guard<std::mutex> guard(screenMutex);
             std::cout << "Send failed.\n";
