@@ -161,7 +161,7 @@ int main() {
         // The protocol limit applies to the complete command, not only the typed text.
         if (request.size() > MAX_LINE_BYTES) {
             std::lock_guard<std::mutex> guard(screenMutex);
-            std::cout << "Request too long (max 256 bytes).\\n";
+            std::cout << "Request too long (max 256 bytes).\n";
             continue;
         }
         if (!sendLine(sock, request)) {
