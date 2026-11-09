@@ -1,0 +1,78 @@
+ネットワークシステム05　学習用チャット通信仕様 v1（第5回）
+
+目的：クライアントとサーバが「何を送ったか」「いつ1つの要求が終わるか」を共通理解する。
+今回のserver/clientは1対1の確認用。SAYの応答は送信した本人だけに返す。
+
+【共通の通信ルール】
+TCP / 127.0.0.1 / PORT=8080
+文字データはUTF-8を想定。ただし受信プログラムはUTF-8の妥当性までは検査しない。
+1メッセージは末尾のLF（改行コード '\n'）まで。CRLFでも受信可能（末尾CRを除去）。
+1行は改行を除いて最大256バイト。超えた場合「ERR TOO_LONG」を返して接続を終了。
+データが1回のrecvに収まる保証はないので、LFが見つかるまで貯めて取り出す。
+1回のrecvに複数行が含まれる場合も、1行ずつ取り出す。
+
+【クライアント→サーバの要求（1行ごと）】
+JOIN <name>   名前登録（nameは半角英数字と_、1～16バイト、空白なし）
+SAY <text>    発言（textは1～200バイト、空白・日本語可、改行不可）
+QUIT          接続を終了する（JOIN前でも可）
+
+例：
+JOIN hana\n
+SAY こんにちは\n
+QUIT\n
+上の「\n」は実際の通信では改行1文字。文字のバックスラッシュ+nを入力する必要はない。
+
+【サーバ→クライアントの応答（要求1件につき1行）】
+OK JOIN <name>        名前登録に成功した
+MSG <name> <text>     発言を受け付け、内容を本人に返した
+BYE                   QUITを受け付け、接続を終了する
+ERR <reason>          要求が無効。通常は接続を継続する
+
+ERRの種類：
+ERR EMPTY             空の行
+ERR BAD_FORMAT        JOIN/SAYの引数がない、QUITに不要な引数がある、制御文字を含む等
+ERR BAD_NAME          名前の文字・長さが不正
+ERR NOT_JOINED        JOIN前にSAYした
+ERR ALREADY_JOINED    同じ接続内で2回目のJOINをした
+ERR UNKNOWN_COMMAND   定義していない命令
+ERR TOO_LONG          行が256バイト超（応答後に切断）
+ERR TEXT_TOO_LONG     SAYの文章が200バイト超（接続は継続）
+
+【状態と処理の順序】
+接続直後（未登録）：
+  JOINが成功 → 名前登録済み
+  SAY → ERR NOT_JOINED
+  QUIT → BYEして終了
+名前登録済み：
+  SAY → MSG <name> <text>
+  JOIN → ERR ALREADY_JOINED
+  QUIT → BYEして終了
+その他の不正な要求 → 対応するERR（通常は状態を変えない）
+
+【正常なやり取り例】
+C: JOIN hana
+S: OK JOIN hana
+C: SAY hello
+S: MSG hana hello
+C: SAY こんにちは
+S: MSG hana こんにちは
+C: QUIT
+S: BYE
+（Sはソケットを閉じる）
+
+【不正入力の例】
+C: SAY hello
+S: ERR NOT_JOINED
+C: JOIN
+S: ERR BAD_FORMAT
+C: JOIN hana
+S: OK JOIN hana
+C: JOIN yuki
+S: ERR ALREADY_JOINED
+C: QUIT
+S: BYE
+
+【今回扱わないこと】
+複数人への同時配信、ログイン認証、名前の重複チェック（他の接続との比較）、
+完全なUTF-8検証、改行を含む本文、ファイル転送、暗号化。
+今後の授業で必要な規則を追加していく。

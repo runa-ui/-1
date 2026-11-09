@@ -1,0 +1,66 @@
+ネットワークシステム07：チャット通信仕様（第5・6回からの拡張）
+
+■ 共通
+TCP、127.0.0.1:8081。LF（\n）で1行を区切る。
+UTF-8を想定。ただしUTF-8の妥当性までは検査しない。
+受信側は1回のrecv()が1行と一致するとは考えない。
+入力は改行を除いて256バイトまで。超えればERR TOO_LONGを返して切断。
+
+■ クライアントからサーバへ
+JOIN <name>   英数字・_で1～16バイト。1接続につき1回。
+SAY <text>    1～200バイト。JOIN成功後に使用。
+QUIT          JOIN前でも使用可。
+※配布クライアントは平文入力をSAYに変換する。
+※RENAME/USERS/HISTORYは標準版では未実装。拡張課題の対象。
+
+■ サーバからの行（非同期に届く）
+OK JOIN <name>    JOIN成功（要求した本人に返す）
+MSG <name> <text> 接続中の登録済み全員へ配信。送信者自身も含む
+INFO JOIN <name> 参加通知。登録済み全員へ送る。参加者自身も含む
+INFO LEAVE <name> 退出通知。退出した本人を除く登録済み全員へ送る
+BYE               QUITの応答として本人へ返して切断
+ERR <reason>      不正な要求への応答。通常は通信を継続
+
+■ 重要な変更
+05・06：要求を送信すると、その要求の応答が1行届く。
+07：他人のSAYや参加・退出通知が、自分から要求を送っていない間にも届く。
+このためクライアントは「標準入力を読む処理」と「サーバの行を受信する処理」を
+別スレッドで進める。
+SAYへの別個のOK応答はなく、送信者自身に配信されるMSGが実質的な確認となる。
+
+■ エラー（第5・6回のコードに合わせる）
+ERR EMPTY
+ERR BAD_FORMAT
+ERR BAD_NAME
+ERR NOT_JOINED
+ERR ALREADY_JOINED
+ERR UNKNOWN_COMMAND
+ERR TEXT_TOO_LONG
+ERR TOO_LONG （この場合は接続を終了）
+
+■ 例：B = hana、C = yuki
+B> JOIN hana
+B< OK JOIN hana
+B< INFO JOIN hana
+C> JOIN yuki
+C< OK JOIN yuki
+B< INFO JOIN yuki
+C< INFO JOIN yuki
+B> SAY hello
+B< MSG hana hello
+C< MSG hana hello
+C> SAY こんにちは
+B< MSG yuki こんにちは
+C< MSG yuki こんにちは
+C> QUIT
+C< BYE
+B< INFO LEAVE yuki
+
+■ 仕様・実装の簡略化
+接続中の別ユーザーとの名前重複は許される（06の任意課題）。
+RENAMEは標準版で実装していない（05の任意課題）。
+コマンドの実行結果と他人のイベントの到着順は、完全には固定されない。
+複数スレッドの送信は「接続ごとの送信mutex」で行単位に保護するが、
+全クライアントで絶対に同じ配信順になる保証はしていない。
+非常に遅いクライアントへの送信が、そのスレッドの処理を待たせる場合がある。
+ログイン認証・暗号化・完全なUTF-8検証・無制限同時接続には対応しない。
