@@ -89,6 +89,146 @@ bool appendLog(double latitude, double longitude, int curlCode,
     return static_cast<bool>(file);
 }
 
+
+// Extract a named JSON object (for example "current" or "current_units").
+// This small parser is sufficient for the flat objects used by this API response.
+bool jsonObject(const std::string& json, const std::string& name, std::string& object) {
+    const std::string key = "\"" + name + "\"";
+    const auto keyPos = json.find(key);
+    if (keyPos == std::string::npos) return false;
+    const auto open = json.find('{', keyPos + key.size());
+    if (open == std::string::npos) return false;
+
+    bool inString = false;
+    bool escaped = false;
+    int depth = 0;
+    for (std::size_t i = open; i < json.size(); ++i) {
+        const char ch = json[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') inString = false;
+            continue;
+        }
+        if (ch == '"') inString = true;
+        else if (ch == '{') ++depth;
+        else if (ch == '}' && --depth == 0) {
+            object = json.substr(open + 1, i - open - 1);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool jsonString(const std::string& object, const std::string& name, std::string& value) {
+    const std::string key = "\"" + name + "\"";
+    const auto keyPos = object.find(key);
+    if (keyPos == std::string::npos) return false;
+    const auto colon = object.find(':', keyPos + key.size());
+    if (colon == std::string::npos) return false;
+    const auto first = object.find('"', colon + 1);
+    if (first == std::string::npos) return false;
+
+    value.clear();
+    bool escaped = false;
+    for (std::size_t i = first + 1; i < object.size(); ++i) {
+        const char ch = object[i];
+        if (escaped) {
+            if (ch == 'n') value += '\n';
+            else if (ch == 'r') value += '\r';
+            else if (ch == 't') value += '\t';
+            else value += ch;
+            escaped = false;
+        } else if (ch == '\\') {
+            escaped = true;
+        } else if (ch == '"') {
+            return true;
+        } else {
+            value += ch;
+        }
+    }
+    return false;
+}
+
+bool jsonNumber(const std::string& object, const std::string& name, double& value) {
+    const std::string key = "\"" + name + "\"";
+    const auto keyPos = object.find(key);
+    if (keyPos == std::string::npos) return false;
+    const auto colon = object.find(':', keyPos + key.size());
+    if (colon == std::string::npos) return false;
+    const auto first = object.find_first_not_of(" \t\r\n", colon + 1);
+    if (first == std::string::npos) return false;
+    try {
+        std::size_t used = 0;
+        value = std::stod(object.substr(first), &used);
+        return used > 0 && std::isfinite(value);
+    } catch (...) {
+        return false;
+    }
+}
+
+std::string weatherDescription(int code) {
+    switch (code) {
+        case 0: return "快晴";
+        case 1: return "主に晴れ";
+        case 2: return "一部曇り";
+        case 3: return "曇り";
+        case 45: case 48: return "霧";
+        case 51: return "弱い霧雨";
+        case 53: return "霧雨";
+        case 55: return "強い霧雨";
+        case 56: case 57: return "着氷性の霧雨";
+        case 61: return "弱い雨";
+        case 63: return "雨";
+        case 65: return "強い雨";
+        case 66: case 67: return "着氷性の雨";
+        case 71: return "弱い雪";
+        case 73: return "雪";
+        case 75: return "強い雪";
+        case 77: return "霧雪";
+        case 80: return "弱いにわか雨";
+        case 81: return "にわか雨";
+        case 82: return "強いにわか雨";
+        case 85: return "弱いにわか雪";
+        case 86: return "強いにわか雪";
+        case 95: return "雷雨";
+        case 96: case 99: return "ひょうを伴う雷雨";
+        default: return "不明";
+    }
+}
+
+void displayWeather(const std::string& json, double latitude, double longitude) {
+    std::string current, units;
+    if (!jsonObject(json, "current", current) ||
+        !jsonObject(json, "current_units", units)) {
+        std::cout << "\n天気情報をJSONから読み取れませんでした。\n";
+        return;
+    }
+
+    std::string time, temperatureUnit, humidityUnit;
+    double temperature = 0.0, humidity = 0.0, codeValue = 0.0;
+    if (!jsonString(current, "time", time) ||
+        !jsonNumber(current, "temperature_2m", temperature) ||
+        !jsonNumber(current, "relative_humidity_2m", humidity) ||
+        !jsonNumber(current, "weather_code", codeValue) ||
+        !jsonString(units, "temperature_2m", temperatureUnit) ||
+        !jsonString(units, "relative_humidity_2m", humidityUnit)) {
+        std::cout << "\n天気情報の必要な項目が不足しています。\n";
+        return;
+    }
+
+    const int weatherCode = static_cast<int>(codeValue);
+    std::cout << "\n========== 現在の天気 ==========\n"
+              << "取得地点：緯度 " << latitude << " / 経度 " << longitude << '\n'
+              << "時刻：" << time << '\n'
+              << "天気：" << weatherDescription(weatherCode)
+              << "（コード " << weatherCode << "）\n"
+              << std::fixed << std::setprecision(1)
+              << "気温：" << temperature << temperatureUnit << '\n'
+              << "湿度：" << std::setprecision(0) << humidity << humidityUnit << '\n'
+              << "================================\n";
+}
+
 int main(int argc, char* argv[]) {
     double latitude = 0.0;
     double longitude = 0.0;
@@ -149,7 +289,11 @@ int main(int argc, char* argv[]) {
               << " HTTP=" << httpStatus << " elapsed=" << elapsed << "ms\n";
     if (result != CURLE_OK)
         std::cerr << "Network error: " << curl_easy_strerror(result) << '\n';
-    if (!body.empty()) std::cout << body << '\n';
+    if (!body.empty()) {
+        std::cout << "\n--- JSON response ---\n" << body << '\n';
+        if (result == CURLE_OK && httpStatus >= 200 && httpStatus < 300)
+            displayWeather(body, latitude, longitude);
+    }
 
     if (!appendLog(latitude, longitude, static_cast<int>(result),
                    httpStatus, elapsed, body.size()))
