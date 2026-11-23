@@ -120,7 +120,7 @@ void showServerLine(const std::string& line, bool interactive) {
 // connectToServer/sendLine/receiveLine functions from lesson07.
 int runAuto(int argc, char* argv[]) {
     if (argc != 5 && argc != 6) {
-        std::cerr << "Usage: ./chat-client09 --auto <name> <1..200> <A|B> [hold_sec:0..10]\n";
+        std::cerr << "Usage: ./chat-client09 --auto <name> <1..10> <A|B> [hold_sec:0..10]\n";
         return 1;
     }
     const std::string name = argv[2];
@@ -142,7 +142,7 @@ int runAuto(int argc, char* argv[]) {
             if (n2 != std::string(argv[5]).size()) return 1;
         }
     } catch (...) { return 1; }
-    if (count < 1 || count > 200 || hold < 0 || hold > 10) return 1;
+    if (count < 1 || count > 10 || hold < 0 || hold > 10) return 1;
 
     int sock = connectToServer();
     timeval recvTimeout{3, 0}; // Avoid waiting forever when server fails.
