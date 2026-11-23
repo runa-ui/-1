@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Network Systems 09: start N copies of the original-style chat client in auto mode.
-Run only against the local, separately started chat-server09 (127.0.0.1:18081).
+Run only against the local, separately started chat-server09 (127.0.0.1:8081).
 No extra C++ threading model. Keeps logs per run and summarizes all clients.
 """
 import argparse
@@ -16,17 +16,15 @@ def main():
     parser = argparse.ArgumentParser(description="Lesson09 localhost A/B comparison")
     parser.add_argument("mode", choices=("A", "B"),
                         help="A: server 0ms / B: server 10ms (must match actual server)")
-    parser.add_argument("clients", type=int, help="concurrent client processes, 1..80")
-    parser.add_argument("requests", type=int, help="SAY count per client, 1..200")
+    parser.add_argument("clients", type=int, help="concurrent client processes, 1..8")
+    parser.add_argument("requests", type=int, help="SAY count per client, 1..10")
     parser.add_argument("--hold", type=int, default=1,
                         help="hold all connected clients before sending (0..10 seconds)")
     args = parser.parse_args()
-    if not 1 <= args.clients <= 80 or not 1 <= args.requests <= 200:
-        parser.error("clients 1..80 and requests 1..200 only")
+    if not 1 <= args.clients <= 8 or not 1 <= args.requests <= 10:
+        parser.error("PDF lesson limit: clients 1..8 and SAYs per client 1..10")
     if not 0 <= args.hold <= 10:
         parser.error("--hold must be 0..10")
-    if args.mode == "B" and args.clients * args.requests > 400:
-        parser.error("Mode B is intentionally limited to 400 total SAYs for this lesson")
     binary = ROOT / "chat-client09"
     if not binary.is_file():
         parser.error("compile chat-client09.cpp before running")
